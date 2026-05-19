@@ -1,0 +1,2 @@
+sequence,predicted_inhibition,nn_distance,nn_train_index,max_seq_identity_to_train,seq_identity_gt_90
+CAGGATACATTTCTACAGCT,57.540090860848025,26.752476175092966,1068,0.55,False

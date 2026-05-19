@@ -1,0 +1,2 @@
+external_aso_id,sequence,target_gene,modification,chemical_pattern,linkage,linkage_location,smiles,cell_line,aso_concentration_nm,treatment_period_hours,inhibition_percent,source,tofersen_flag,notes,seq_length
+TOFERSEN,CAGGATACATTTCTACAGCT,SOD1,MOE/5-methylcytosines/deoxy,MMMMMddddddddddMMMMM,phosphodiester/phosphorothioate,3?5?17?19/else,,,,,,"FDA GSRS (UNII: 5YL205692C), USAN Council Nov 2017, Qalsody prescribing information",True,FDA-approved gapmer ASO (Qalsody). 5-10-5 MOE gapmer. CAS: 1898254-60-8. Also known as BIIB-067.,20

@@ -1,0 +1,21 @@
+{
+  "external_aso_id": "TOFERSEN",
+  "sequence": "CAGGATACATTTCTACAGCT",
+  "target_gene": "SOD1",
+  "modification": "MOE/5-methylcytosines/deoxy",
+  "chemical_pattern": "MMMMMddddddddddMMMMM",
+  "linkage": "phosphodiester/phosphorothioate",
+  "linkage_location": "3?5?17?19/else",
+  "smiles": "",
+  "cell_line": "",
+  "aso_concentration_nm": "",
+  "treatment_period_hours": "",
+  "inhibition_percent": "",
+  "source": "FDA GSRS (UNII: 5YL205692C), USAN Council Nov 2017, Qalsody prescribing information",
+  "tofersen_flag": true,
+  "notes": "FDA-approved gapmer ASO (Qalsody). 5-10-5 MOE gapmer. CAS: 1898254-60-8. Also known as BIIB-067.",
+  "seq_length": 20,
+  "predicted_inhibition_percent": 57.540090860848025,
+  "prediction_note": "In-silico prediction under standardized conditions",
+  "disclaimer": "This is an in-silico benchmark and not a clinical efficacy claim."
+}

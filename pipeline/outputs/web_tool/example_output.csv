@@ -1,0 +1,4 @@
+sequence,chemical_pattern,predicted_inhibition_pct,tofersen_predicted_pct,delta_vs_tofersen,category,model,cell_line,concentration_nm
+CCGTCGCCCTTCAGCACGCA,MMMMMddddddddddMMMMM,45.2,38.5,6.7,comparable_to_tofersen,LightGBM,HepG2,3000
+CAAGCCAAACGACTTCCAGC,MMMMMddddddddddMMMMM,67.8,38.5,29.3,higher_than_tofersen,LightGBM,A431,5000
+TTACACCACAAGCCAAACGA,MMMMMddddddddddMMMMM,22.1,38.5,-16.4,lower_than_tofersen,LightGBM,SH-SY5Y,62

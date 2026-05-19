@@ -1,0 +1,4 @@
+sequence,chemical_pattern,modification,linkage,linkage_location,smiles,cell_line,transfection,aso_concentration_nm,treatment_period_hours,density_cells_per_well,primer_probe_set
+CCGTCGCCCTTCAGCACGCA,MMMMMddddddddddMMMMM,MOE/5-methylcytosines/deoxy,phosphorothioate,else,,HepG2,electroporation,3000,16,20000,RTS3898
+CAAGCCAAACGACTTCCAGC,MMMMMddddddddddMMMMM,MOE/5-methylcytosines/deoxy,phosphorothioate,else,,A431,electroporation,5000,24,20000,RTS3898
+TTACACCACAAGCCAAACGA,MMMMMddddddddddMMMMM,MOE/5-methylcytosines/deoxy,phosphodiester/phosphorothioate,1?2?3?14?15?16/else,,SH-SY5Y,free_uptake,62,16,20000,RTS3898
