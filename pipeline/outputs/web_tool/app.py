@@ -169,8 +169,6 @@ def extract_all_features(seq, chemical_pattern, modification, linkage,
     feats["n_chemistry_transitions"] = sum(1 for j in range(1, len(cp)) if cp[j] != cp[j-1])
 
     arch = f"{left_wing}-{gap}-{right_wing}"
-    for a in feats.keys():
-        pass  # Will be set below
 
     # -- Modification -------------------------------------------------
     mod_lower = str(modification).lower()
