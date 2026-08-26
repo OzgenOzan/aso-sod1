@@ -347,10 +347,7 @@ def run_shap_analysis(model, X_train, feature_cols, pipeline, n_samples=200):
 
         X_sample = X_train[:min(n_samples, len(X_train))]
 
-        if model_key in ("xgboost", "lightgbm"):
-            explainer = shap.TreeExplainer(model)
-        else:
-            explainer = shap.TreeExplainer(model)
+        explainer = shap.TreeExplainer(model)
 
         shap_values = explainer.shap_values(X_sample)
 

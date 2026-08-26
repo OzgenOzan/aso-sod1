@@ -336,12 +336,8 @@ def extract_linkage_features(df):
         try:
             if link_loc.lower() in ("else", "nan", ""):
                 # All linkages are the same type (pure PS)
-                if "phosphorothioate" in linkage and "phosphodiester" not in linkage:
-                    feats.at[idx, "predicted_PS_count"] = n_linkages
-                    feats.at[idx, "predicted_PO_count"] = 0
-                else:
-                    feats.at[idx, "predicted_PS_count"] = n_linkages
-                    feats.at[idx, "predicted_PO_count"] = 0
+                feats.at[idx, "predicted_PS_count"] = n_linkages
+                feats.at[idx, "predicted_PO_count"] = 0
             else:
                 # Parse positions for PO (listed positions), rest are PS
                 parts = link_loc.split("/")
@@ -441,7 +437,7 @@ def extract_experimental_features(df):
 
 def build_feature_matrix(df, skip_constant_removal=False):
     """Assemble all feature groups into a single feature matrix.
-    
+
     Args:
         df: DataFrame with required columns
         skip_constant_removal: If True, keep all columns even if constant.
