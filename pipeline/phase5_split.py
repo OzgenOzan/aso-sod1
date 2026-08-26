@@ -66,26 +66,6 @@ def cluster_aware_stratified_split(df, test_size=TEST_SIZE, seed=RANDOM_SEED):
     return df_train, df_test
 
 
-def report_split_balance(df_train, df_test, df_full):
-    """Generate balance report for the split."""
-    report = {}
-
-    # Inhibition distribution
-    for name, subset in [("train", df_train), ("test", df_test), ("full", df_full)]:
-        report[f"{name}_n"] = len(subset)
-        report[f"{name}_inh_mean"] = subset["inhibition_percent"].mean()
-        report[f"{name}_inh_std"] = subset["inhibition_percent"].std()
-        report[f"{name}_inh_median"] = subset["inhibition_percent"].median()
-
-    # Per-category balance
-    cat_cols_to_check = []
-    for col in df_full.columns:
-        if col.startswith("cell_") or col.startswith("transfection_") or col.startswith("primer_"):
-            cat_cols_to_check.append(col)
-
-    return report
-
-
 def write_split_report(df_train, df_test, df_full):
     """Write split_report.md."""
     path = os.path.join(REPORT_DIR, "split_report.md")

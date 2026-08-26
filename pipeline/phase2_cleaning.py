@@ -167,7 +167,7 @@ def parse_location(df):
             parts = loc_str.split("/")
             position_str = parts[0] if parts else ""
             positions = [int(p) for p in position_str.split("?") if p.strip().isdigit()]
-            
+
             # Check if positions are within sequence length
             valid = all(0 <= p < seq_len for p in positions)
             if not valid:
@@ -242,7 +242,6 @@ def handle_duplicates(df):
     # Drop unhashable columns before deduplication (they contain lists/dicts)
     unhashable_cols = ["parsed_mod_positions", "parsed_linkage_positions"]
     existing_unhashable = [c for c in unhashable_cols if c in df.columns]
-    saved_unhashable = {c: df[c].copy() for c in existing_unhashable}
     df = df.drop(columns=existing_unhashable, errors="ignore")
 
     # Remove exact duplicate rows
