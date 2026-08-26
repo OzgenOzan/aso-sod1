@@ -320,8 +320,14 @@ def train_models(X_train, X_train_scaled, y_train, X_test, X_test_scaled, y_test
         trained_models["mlp"] = model_mlp
 
     except Exception as e:
-        print(f"    MLP training failed: {e}")
-        metrics = {"Model": "MLP (PyTorch)", "MAE": np.nan, "RMSE": np.nan, "R2": np.nan}
+        print(f"    MLP training FAILED: {e}")
+        metrics = {
+            "Model": "MLP (PyTorch) [FAILED]",
+            "MAE": np.nan,
+            "RMSE": np.nan,
+            "R2": np.nan,
+            "Notes": f"Training failed: {e}",
+        }
         results.append(metrics)
 
     return pd.DataFrame(results), trained_models

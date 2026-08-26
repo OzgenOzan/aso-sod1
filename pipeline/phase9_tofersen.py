@@ -23,19 +23,6 @@ from config import (
 )
 
 
-def load_tofersen_features():
-    """Load tofersen feature matrix from external validation."""
-    ext_fm_path = os.path.join(EXT_VAL_DIR, "external_validation_feature_matrix.csv")
-    if not os.path.exists(ext_fm_path):
-        print("[Phase 9] ERROR: External validation feature matrix not found")
-        return None
-
-    df_ext = pd.read_csv(ext_fm_path)
-    # Tofersen should be the first (or only) record
-    tofersen_row = df_ext.iloc[0:1]
-    return tofersen_row
-
-
 def predict_tofersen():
     """Generate tofersen prediction using inline feature extraction."""
     # Load model and pipeline
