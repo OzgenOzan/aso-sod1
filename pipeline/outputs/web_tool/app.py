@@ -2,7 +2,8 @@
 ASO Inhibition Predictor -- Streamlit Web Application
 ======================================================
 Predicts inhibition percentage for novel SOD1-targeting ASOs
-and benchmarks against tofersen.
+and compares them against an in-silico tofersen model reference
+(model prediction under imputed conditions; not experimental validation).
 
 Usage: streamlit run app.py
 """
@@ -489,22 +490,22 @@ def main():
                 st.markdown(f"""
                 <div class="result-card" style="background: linear-gradient(135deg, #2193b0, #6dd5ed);">
                     <h2>{tofersen_pred:.1f}%</h2>
-                    <p>Tofersen Reference</p>
+                    <p>Tofersen Reference (in-silico model prediction)</p>
                 </div>
                 """, unsafe_allow_html=True)
 
             delta = predicted - tofersen_pred
             if delta > 10:
                 cat_class = "higher"
-                cat_text = "Higher than Tofersen"
+                cat_text = "Higher than tofersen in-silico reference"
                 cat_emoji = "🟢"
             elif delta < -10:
                 cat_class = "lower"
-                cat_text = "Lower than Tofersen"
+                cat_text = "Lower than tofersen in-silico reference"
                 cat_emoji = "🔴"
             else:
                 cat_class = "comparable"
-                cat_text = "Comparable to Tofersen"
+                cat_text = "Comparable to tofersen in-silico reference"
                 cat_emoji = "🟡"
 
             with col3:
@@ -521,8 +522,8 @@ def main():
                 "Parameter": [
                     "Sequence", "Length", "Chemical Pattern",
                     "Gapmer Architecture", "GC Content",
-                    "Predicted Inhibition", "Tofersen Prediction",
-                    "Delta vs Tofersen", "Category",
+                    "Predicted Inhibition", "Tofersen in-silico reference",
+                    "Delta vs tofersen reference", "Category",
                     "Model", "Cell Line", "Concentration (nM)"
                 ],
                 "Value": [
@@ -541,7 +542,9 @@ def main():
             <div class="disclaimer">
                 <strong>⚠️ Disclaimer:</strong> This tool provides research-use-only in-silico predictions.
                 It does not provide clinical, therapeutic, or regulatory advice.
-                Experimental validation is required. The tofersen comparison is an in-silico benchmark
+                Experimental validation is required. The tofersen value shown is this model's own
+                prediction under imputed experimental conditions (no measured ground truth):
+                it is a model self-consistency reference, NOT experimental validation,
                 and not a clinical efficacy claim.
             </div>
             """, unsafe_allow_html=True)
@@ -562,7 +565,7 @@ def main():
         - ⚗️ Chemistry pattern recognition (MOE/cEt/deoxy gapmers)
         - 🔗 Backbone linkage analysis
         - 📊 Experimental condition adjustment
-        - 🏆 Tofersen benchmark comparison
+        - 🏆 Tofersen in-silico reference comparison (model prediction, not experimental)
         """)
 
 
