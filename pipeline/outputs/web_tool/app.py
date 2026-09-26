@@ -15,11 +15,13 @@ import pickle
 import json
 import os
 import sys
+import hashlib
+import warnings
 
 # -- Page config ------------------------------------------------------
 st.set_page_config(
     page_title="SOD1 ASO Inhibition Predictor",
-    page_icon="🧬",
+    page_icon="\U0001f9ec",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -39,9 +41,47 @@ if not os.path.exists(MODEL_DIR):
 
 sys.path.insert(0, PIPELINE_DIR)
 
+# ASO1-2: integrity-verified pickle loading. In a full repo checkout the
+# shared helper lives at pipeline/model_integrity.py; in a standalone
+# deployment of this directory it may be absent, so provide an identical
+# local fallback.
+PIPELINE_SRC_DIR = os.path.abspath(os.path.join(APP_DIR, "..", ".."))
+if os.path.isdir(PIPELINE_SRC_DIR):
+    sys.path.insert(0, PIPELINE_SRC_DIR)
+
+try:
+    from model_integrity import load_pickle_verified
+except ImportError:
+    def load_pickle_verified(path, expected_sha256=None):
+        """Fallback copy of pipeline.model_integrity.load_pickle_verified
+        (keep in sync with that module)."""
+        if expected_sha256:
+            h = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                    h.update(chunk)
+            actual = h.hexdigest()
+            if actual.lower() != expected_sha256.strip().lower():
+                raise ValueError(
+                    f"SHA-256 mismatch for {path}: expected {expected_sha256}, "
+                    f"got {actual}. Refusing to deserialize a possibly tampered artifact."
+                )
+        else:
+            warnings.warn(
+                f"Loading {path} WITHOUT integrity verification "
+                "(no expected SHA-256 configured). Set the corresponding "
+                "ASO_*_SHA256 environment variable to enable verification.",
+                stacklevel=2,
+            )
+        with open(path, "rb") as fh:
+            return pickle.load(fh)
+
 
 # =======================================================================
 #  Feature Extraction (inline for deployment)
+#  NOTE: this mirrors pipeline/phase4_features.py. The Location and
+#  Linkage sections below were fixed (ASO1-3) to match the training-time
+#  semantics of extract_location_features() and extract_linkage_features().
 # =======================================================================
 
 CHEMISTRY_CODES = {"M": "MOE", "C": "cEt", "d": "deoxy"}
@@ -181,8 +221,15 @@ def extract_all_features(seq, chemical_pattern, modification, linkage,
     types = [t.strip() for t in mod_lower.split("/") if t.strip()]
     feats["n_modification_types"] = len(types)
 
-    # -- Location -----------------------------------------------------
-    loc = str(linkage_location).strip()
+    # -- Location (ASO1-3 fix) -----------------------------------------
+    # Training semantics (phase4_features.extract_location_features) parse the
+    # MODIFICATION Location field. The app has no separate Location input, so
+    # the modification location is derived from the chemical pattern exactly as
+    # phase9_tofersen.predict_tofersen() does for tofersen: indices of all
+    # non-deoxy ('d') positions.
+    mod_positions = [str(i) for i, c in enumerate(cp) if c != 'd']
+    location_str = "?".join(mod_positions) + "/C/else" if mod_positions else "else"
+    loc = location_str.strip()
     try:
         parts = loc.split("/")
         feats["n_location_groups"] = len(parts)
@@ -190,9 +237,16 @@ def extract_all_features(seq, chemical_pattern, modification, linkage,
         for p in parts:
             all_pos.extend([int(x) for x in p.split("?") if x.strip().isdigit()])
         feats["n_position_indices"] = len(all_pos)
-        feats["min_modified_position"] = min(all_pos) if all_pos else 0
-        feats["max_modified_position"] = max(all_pos) if all_pos else 0
-        feats["mod_positions_valid"] = 1
+        if all_pos:
+            feats["min_modified_position"] = min(all_pos)
+            feats["max_modified_position"] = max(all_pos)
+            # matches phase4: validity flag = all positions within sequence
+            feats["mod_positions_valid"] = int(all(0 <= p < n for p in all_pos))
+        else:
+            # phase4 stores NaN here, later filled with 0 in build_feature_matrix
+            feats["min_modified_position"] = 0
+            feats["max_modified_position"] = 0
+            feats["mod_positions_valid"] = 0
     except Exception:
         feats["n_location_groups"] = 0
         feats["n_position_indices"] = 0
@@ -200,20 +254,61 @@ def extract_all_features(seq, chemical_pattern, modification, linkage,
         feats["max_modified_position"] = 0
         feats["mod_positions_valid"] = 0
 
-    # -- Linkage ------------------------------------------------------
+    # -- Linkage (ASO1-3 fix) ------------------------------------------
+    # Faithful single-row replica of phase4_features.extract_linkage_features:
+    # PO/PS counts are computed from the linkage_location pattern, where listed
+    # positions are PO (phosphodiester) and the remaining internucleotide
+    # linkages are PS (phosphorothioate). "else"/"" means all-PS.
     link_lower = str(linkage).lower()
     feats["contains_PS"] = int("phosphorothioate" in link_lower)
     feats["contains_PO"] = int("phosphodiester" in link_lower)
     link_types = [t.strip() for t in link_lower.split("/") if t.strip()]
     feats["linkage_type_count"] = len(link_types)
-    n_linkages = max(n - 1, 1)
-    feats["predicted_PS_count"] = n_linkages
-    feats["predicted_PO_count"] = 0
-    feats["predicted_PS_fraction"] = 1.0
-    feats["predicted_PO_fraction"] = 0.0
+
+    n_linkages = n - 1  # N-1 internucleotide linkages (as in phase4)
+    link_loc = str(linkage_location).strip()
+    try:
+        if link_loc.lower() in ("else", "nan", ""):
+            # All linkages are the same type (pure PS)
+            feats["predicted_PS_count"] = n_linkages
+            feats["predicted_PO_count"] = 0
+        else:
+            # Listed positions are PO; the rest are PS
+            parts = link_loc.split("/")
+            po_positions = []
+            for p in parts:
+                if p.strip().lower() == "else":
+                    continue
+                po_positions.extend([int(x) for x in p.split("?") if x.strip().isdigit()])
+            n_po = len(po_positions)
+            n_ps = n_linkages - n_po
+            feats["predicted_PO_count"] = n_po
+            feats["predicted_PS_count"] = max(0, n_ps)
+    except Exception:
+        feats["predicted_PS_count"] = n_linkages
+        feats["predicted_PO_count"] = 0
+
+    feats["predicted_PS_fraction"] = feats["predicted_PS_count"] / n_linkages if n_linkages > 0 else 0
+    feats["predicted_PO_fraction"] = feats["predicted_PO_count"] / n_linkages if n_linkages > 0 else 0
     feats["linkage_positions_valid"] = 1
-    feats["n_linkage_position_indices"] = 0
-    feats["linkage_transition_count"] = 0
+
+    # Linkage position indices / transition count (as in phase4)
+    try:
+        if link_loc.lower() not in ("else", "nan", ""):
+            parts = link_loc.split("/")
+            positions = []
+            for p in parts:
+                if p.strip().lower() == "else":
+                    continue
+                positions.extend([int(x) for x in p.split("?") if x.strip().isdigit()])
+            feats["n_linkage_position_indices"] = len(positions)
+            feats["linkage_transition_count"] = min(len(positions) * 2, n_linkages)
+        else:
+            feats["n_linkage_position_indices"] = 0
+            feats["linkage_transition_count"] = 0
+    except Exception:
+        feats["n_linkage_position_indices"] = 0
+        feats["linkage_transition_count"] = 0
 
     # -- SMILES -------------------------------------------------------
     smiles_str = str(smiles) if smiles else ""
@@ -258,10 +353,13 @@ def extract_all_features(seq, chemical_pattern, modification, linkage,
 # =======================================================================
 
 def load_resources():
-    """Load model, pipeline, and tofersen reference."""
+    """Load model, pipeline, and tofersen reference (integrity-verified)."""
     try:
-        with open(os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"), "rb") as f:
-            pipeline = pickle.load(f)
+        # ASO1-2: verify SHA-256 before deserializing when env vars are set
+        pipeline = load_pickle_verified(
+            os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"),
+            os.environ.get("ASO_PREPROCESSING_SHA256"),
+        )
 
         model_key = pipeline["best_model_key"]
         if model_key == "mlp":
@@ -283,8 +381,10 @@ def load_resources():
             model.load_state_dict(torch.load(os.path.join(MODEL_DIR, "best_model_mlp.pth"), weights_only=True))
             model.eval()
         else:
-            with open(os.path.join(MODEL_DIR, "best_model.pkl"), "rb") as f:
-                model = pickle.load(f)
+            model = load_pickle_verified(
+                os.path.join(MODEL_DIR, "best_model.pkl"),
+                os.environ.get("ASO_BEST_MODEL_SHA256"),
+            )
 
         # Tofersen reference
         tof_path = os.path.join(EXT_VAL_DIR, "tofersen_reference.json")
@@ -376,7 +476,7 @@ def main():
     # -- Header -------------------------------------------------------
     st.markdown("""
     <div class="main-header">
-        <h1>🧬 SOD1 ASO Inhibition Predictor</h1>
+        <h1>\U0001f9ec SOD1 ASO Inhibition Predictor</h1>
         <p>In-silico prediction of antisense oligonucleotide knockdown efficiency</p>
     </div>
     """, unsafe_allow_html=True)
@@ -387,11 +487,18 @@ def main():
         st.stop()
 
     feature_cols = pipeline["feature_cols"]
-    tofersen_pred = tofersen_ref.get("predicted_inhibition_percent", 50.0)
+    # ASO1-6 fix (companion to phase9): no fabricated 50.0 default -- if the
+    # reference has no prediction, the benchmark is shown as unavailable.
+    tofersen_pred = tofersen_ref.get("predicted_inhibition_percent")
+    if tofersen_pred is not None:
+        try:
+            tofersen_pred = float(tofersen_pred)
+        except (TypeError, ValueError):
+            tofersen_pred = None
 
     # -- Sidebar: Input -----------------------------------------------
     with st.sidebar:
-        st.header("🔬 ASO Input Parameters")
+        st.header("\U0001f52c ASO Input Parameters")
 
         sequence = st.text_input("ASO Sequence (5'->3')", value="CCGTCGCCCTTCAGCACGCA",
                                   help="DNA nucleotides only: A, C, G, T")
@@ -412,7 +519,7 @@ def main():
         smiles = st.text_area("SMILES (optional)", value="", height=68)
 
         st.divider()
-        st.subheader("🧪 Experimental Conditions")
+        st.subheader("\U0001f9ea Experimental Conditions")
 
         cell_line = st.selectbox("Cell Line", ["HepG2", "A431", "SH-SY5Y"])
         transfection = st.selectbox("Transfection Method", ["electroporation", "free_uptake"])
@@ -421,7 +528,7 @@ def main():
         density = st.number_input("Cell Density (cells/well)", min_value=1000, max_value=100000, value=20000)
         primer_probe = st.selectbox("Primer/Probe Set", ["RTS3898", "HTS90"])
 
-        predict_btn = st.button("🚀 Predict Inhibition", type="primary", use_container_width=True)
+        predict_btn = st.button("\U0001f680 Predict Inhibition", type="primary", use_container_width=True)
 
     # -- Validation ---------------------------------------------------
     if predict_btn:
@@ -486,38 +593,57 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
-            with col2:
-                st.markdown(f"""
-                <div class="result-card" style="background: linear-gradient(135deg, #2193b0, #6dd5ed);">
-                    <h2>{tofersen_pred:.1f}%</h2>
-                    <p>Tofersen Reference (in-silico model prediction)</p>
-                </div>
-                """, unsafe_allow_html=True)
+            if tofersen_pred is not None:
+                with col2:
+                    st.markdown(f"""
+                    <div class="result-card" style="background: linear-gradient(135deg, #2193b0, #6dd5ed);">
+                        <h2>{tofersen_pred:.1f}%</h2>
+                        <p>Tofersen Reference (in-silico model prediction)</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-            delta = predicted - tofersen_pred
-            if delta > 10:
-                cat_class = "higher"
-                cat_text = "Higher than tofersen in-silico reference"
-                cat_emoji = "🟢"
-            elif delta < -10:
-                cat_class = "lower"
-                cat_text = "Lower than tofersen in-silico reference"
-                cat_emoji = "🔴"
+                delta = predicted - tofersen_pred
+                if delta > 10:
+                    cat_class = "higher"
+                    cat_text = "Higher than tofersen in-silico reference"
+                    cat_emoji = "\U0001f7e2"
+                elif delta < -10:
+                    cat_class = "lower"
+                    cat_text = "Lower than tofersen in-silico reference"
+                    cat_emoji = "\U0001f534"
+                else:
+                    cat_class = "comparable"
+                    cat_text = "Comparable to tofersen in-silico reference"
+                    cat_emoji = "\U0001f7e1"
+
+                with col3:
+                    st.markdown(f"""
+                    <div class="benchmark-card {cat_class}">
+                        <h2>{cat_emoji} {delta:+.1f}%</h2>
+                        <p>{cat_text}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
             else:
-                cat_class = "comparable"
-                cat_text = "Comparable to tofersen in-silico reference"
-                cat_emoji = "🟡"
-
-            with col3:
-                st.markdown(f"""
-                <div class="benchmark-card {cat_class}">
-                    <h2>{cat_emoji} {delta:+.1f}%</h2>
-                    <p>{cat_text}</p>
-                </div>
-                """, unsafe_allow_html=True)
+                # No fabricated benchmark: reference prediction unavailable
+                delta = None
+                cat_text = "No tofersen benchmark (reference prediction unavailable)"
+                with col2:
+                    st.markdown("""
+                    <div class="result-card" style="background: linear-gradient(135deg, #6c757d, #adb5bd);">
+                        <h2>N/A</h2>
+                        <p>Tofersen reference unavailable</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col3:
+                    st.markdown("""
+                    <div class="benchmark-card comparable">
+                        <h2>\u2014</h2>
+                        <p>No tofersen benchmark available</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
             # -- Detailed Results -------------------------------------
-            st.markdown("### 📊 Detailed Results")
+            st.markdown("### \U0001f4ca Detailed Results")
             results_data = {
                 "Parameter": [
                     "Sequence", "Length", "Chemical Pattern",
@@ -530,8 +656,10 @@ def main():
                     seq_clean, len(seq_clean), chemical_pattern,
                     f"{feat_dict.get('left_modified_wing_length', '?')}-{feat_dict.get('central_deoxy_gap_length', '?')}-{feat_dict.get('right_modified_wing_length', '?')}",
                     f"{feat_dict.get('GC_fraction', 0):.1%}",
-                    f"{predicted:.2f}%", f"{tofersen_pred:.2f}%",
-                    f"{delta:+.2f}%", cat_text,
+                    f"{predicted:.2f}%",
+                    f"{tofersen_pred:.2f}%" if tofersen_pred is not None else "unavailable",
+                    f"{delta:+.2f}%" if delta is not None else "N/A",
+                    cat_text,
                     pipeline["best_model_name"], cell_line, f"{aso_conc}"
                 ]
             }
@@ -540,7 +668,7 @@ def main():
             # -- Disclaimer -------------------------------------------
             st.markdown("""
             <div class="disclaimer">
-                <strong>⚠️ Disclaimer:</strong> This tool provides research-use-only in-silico predictions.
+                <strong>\u26a0\ufe0f Disclaimer:</strong> This tool provides research-use-only in-silico predictions.
                 It does not provide clinical, therapeutic, or regulatory advice.
                 Experimental validation is required. The tofersen value shown is this model's own
                 prediction under imputed experimental conditions (no measured ground truth):
@@ -551,7 +679,7 @@ def main():
 
     else:
         # -- Welcome content ------------------------------------------
-        st.markdown("### 👈 Enter ASO parameters in the sidebar and click **Predict Inhibition**")
+        st.markdown("### \U0001f448 Enter ASO parameters in the sidebar and click **Predict Inhibition**")
 
         st.markdown("#### About This Tool")
         st.markdown("""
@@ -561,11 +689,11 @@ def main():
         and experimental conditions.
 
         **Features:**
-        - 🧬 Sequence composition analysis
-        - ⚗️ Chemistry pattern recognition (MOE/cEt/deoxy gapmers)
-        - 🔗 Backbone linkage analysis
-        - 📊 Experimental condition adjustment
-        - 🏆 Tofersen in-silico reference comparison (model prediction, not experimental)
+        - \U0001f9ec Sequence composition analysis
+        - \u2697\ufe0f Chemistry pattern recognition (MOE/cEt/deoxy gapmers)
+        - \U0001f517 Backbone linkage analysis
+        - \U0001f4ca Experimental condition adjustment
+        - \U0001f3c6 Tofersen in-silico reference comparison (model prediction, not experimental)
         """)
 
 

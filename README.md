@@ -53,6 +53,7 @@ streamlit run pipeline/outputs/web_tool/app.py
 dataset/                  Input data (sod-1_data.xlsx, tofersen.json)
 pipeline/                 Pipeline source code
   config.py               Shared paths/constants
+  model_integrity.py      SHA-256-verified pickle loading helpers
   phase1_audit.py ... phase9_tofersen.py
   run_pipeline.py         End-to-end runner
   outputs/
@@ -64,6 +65,7 @@ pipeline/                 Pipeline source code
     web_tool/             Streamlit app (app.py)
 documentation/            Final pipeline report and model card
 articles/                 Reference articles (PDF)
+tests/                    Static remediation regression tests (no heavy deps)
 verify_pipeline.py        Smoke check of committed model artifacts
 ```
 
@@ -75,6 +77,21 @@ phase-by-phase report.
 
 - Model artifacts are distributed as pickle files (`pipeline/outputs/models/*.pkl`);
   only load them from a trusted checkout of this repository.
+- **Model artifact integrity:** pickle deserialization can execute arbitrary code.
+  All pipeline phases, `verify_pipeline.py`, and the web tool load artifacts through
+  `pipeline/model_integrity.load_pickle_verified()`, which verifies the file's
+  SHA-256 hash before deserializing when the expected hash is configured via
+  environment variables:
+
+  ```bash
+  export ASO_BEST_MODEL_SHA256=<sha256 of pipeline/outputs/models/best_model.pkl>
+  export ASO_PREPROCESSING_SHA256=<sha256 of pipeline/outputs/models/preprocessing_pipeline.pkl>
+  ```
+
+  Compute the hashes with e.g. `sha256sum pipeline/outputs/models/*.pkl` after a
+  trusted checkout or retraining. If a variable is unset, a loud warning is emitted
+  and the artifact is loaded unverified (backward compatible). If a hash is set and
+  does not match, loading is refused.
 - The tofersen benchmark is an in-silico model self-consistency reference, **not**
   experimental validation.
 - No license file is currently provided; all rights reserved by the author.
