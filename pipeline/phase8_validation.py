@@ -27,6 +27,7 @@ from config import (
     DATA_DIR, MODEL_DIR, REPORT_DIR, FIGURE_DIR, EXT_VAL_DIR,
     RANDOM_SEED, HIGH_EFFICACY_THRESHOLD
 )
+from model_integrity import load_pickle_verified
 
 from sklearn.model_selection import GroupKFold, permutation_test_score
 from sklearn.metrics import (
@@ -44,9 +45,17 @@ import seaborn as sns
 
 
 def load_model_and_pipeline():
-    """Load the best model and preprocessing pipeline."""
-    with open(os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"), "rb") as f:
-        pipeline = pickle.load(f)
+    """Load the best model and preprocessing pipeline.
+
+    ASO1-2: artifacts are SHA-256 verified before deserialization when the
+    ASO_PREPROCESSING_SHA256 / ASO_BEST_MODEL_SHA256 env vars are set;
+    otherwise a loud warning is emitted and loading proceeds (backward
+    compatible).
+    """
+    pipeline = load_pickle_verified(
+        os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"),
+        os.environ.get("ASO_PREPROCESSING_SHA256"),
+    )
 
     model_key = pipeline["best_model_key"]
 
@@ -71,8 +80,10 @@ def load_model_and_pipeline():
         model.load_state_dict(torch.load(os.path.join(MODEL_DIR, "best_model_mlp.pth"), weights_only=True))
         model.eval()
     else:
-        with open(os.path.join(MODEL_DIR, "best_model.pkl"), "rb") as f:
-            model = pickle.load(f)
+        model = load_pickle_verified(
+            os.path.join(MODEL_DIR, "best_model.pkl"),
+            os.environ.get("ASO_BEST_MODEL_SHA256"),
+        )
 
     return model, pipeline
 
