@@ -2,14 +2,22 @@ import sys, os
 sys.path.insert(0, 'pipeline')
 import pickle, json, numpy as np
 
+# ASO1-2: integrity-verified artifact loading (hash from env var; loud
+# warning + unverified load when unset, for backward compatibility)
+from model_integrity import load_pickle_verified
+
 MODEL_DIR = 'pipeline/outputs/models'
 EXT_VAL_DIR = 'pipeline/outputs/external_validation'
 
-with open(os.path.join(MODEL_DIR, 'preprocessing_pipeline.pkl'), 'rb') as f:
-    pipeline = pickle.load(f)
+pipeline = load_pickle_verified(
+    os.path.join(MODEL_DIR, 'preprocessing_pipeline.pkl'),
+    os.environ.get('ASO_PREPROCESSING_SHA256'),
+)
 
-with open(os.path.join(MODEL_DIR, 'best_model.pkl'), 'rb') as f:
-    model = pickle.load(f)
+model = load_pickle_verified(
+    os.path.join(MODEL_DIR, 'best_model.pkl'),
+    os.environ.get('ASO_BEST_MODEL_SHA256'),
+)
 
 model_name = pipeline["best_model_name"]
 n_feats = len(pipeline["feature_cols"])
