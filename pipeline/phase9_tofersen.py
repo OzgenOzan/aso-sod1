@@ -21,13 +21,17 @@ from config import (
     DATA_DIR, MODEL_DIR, REPORT_DIR, EXT_VAL_DIR, FIGURE_DIR,
     TOFERSEN_COMPARABLE_MARGIN, RANDOM_SEED
 )
+from model_integrity import load_pickle_verified
 
 
 def predict_tofersen():
     """Generate tofersen prediction using inline feature extraction."""
-    # Load model and pipeline
-    with open(os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"), "rb") as f:
-        pipeline = pickle.load(f)
+    # Load model and pipeline (ASO1-2: SHA-256 verified when env vars are set;
+    # loud warning + unverified load otherwise, for backward compatibility)
+    pipeline = load_pickle_verified(
+        os.path.join(MODEL_DIR, "preprocessing_pipeline.pkl"),
+        os.environ.get("ASO_PREPROCESSING_SHA256"),
+    )
 
     model_key = pipeline["best_model_key"]
     feature_cols = pipeline["feature_cols"]
@@ -51,8 +55,10 @@ def predict_tofersen():
         model.load_state_dict(torch.load(os.path.join(MODEL_DIR, "best_model_mlp.pth"), weights_only=True))
         model.eval()
     else:
-        with open(os.path.join(MODEL_DIR, "best_model.pkl"), "rb") as f:
-            model = pickle.load(f)
+        model = load_pickle_verified(
+            os.path.join(MODEL_DIR, "best_model.pkl"),
+            os.environ.get("ASO_BEST_MODEL_SHA256"),
+        )
 
     # Get tofersen info and standard conditions
     from phase6_external import parse_tofersen_json
@@ -143,10 +149,10 @@ def write_tofersen_report(tofersen_pred, standard_conditions):
     lines.append("# Phase 9 -- Tofersen Benchmarking Report\n\n")
     lines.append(f"**Generated:** {pd.Timestamp.now().isoformat()}\n\n")
 
-    lines.append("> ⚠️ **Disclaimer:** This is an in-silico benchmark and not a clinical efficacy claim.\n\n")
+    lines.append("> \u26a0\ufe0f **Disclaimer:** This is an in-silico benchmark and not a clinical efficacy claim.\n\n")
 
     lines.append("## Tofersen Reference\n\n")
-    lines.append("- **Drug name:** Tofersen (Qalsody™)\n")
+    lines.append("- **Drug name:** Tofersen (Qalsody\u2122)\n")
     lines.append("- **Manufacturer:** Biogen\n")
     lines.append("- **FDA approval:** April 2023 (accelerated approval)\n")
     lines.append("- **Target:** SOD1 mRNA\n")
@@ -234,14 +240,22 @@ def main():
         "primer_probe_set": df_train_raw["primer_probe_set"].mode().iloc[0],
     }
 
-    # Predict tofersen
-    tofersen_pred = predict_tofersen()
-    if tofersen_pred is not None:
-        print(f"[Phase 9] Tofersen predicted inhibition: {tofersen_pred:.2f}%")
-    else:
-        print("[Phase 9] WARNING: Could not predict tofersen")
-        tofersen_pred = 50.0  # Fallback
-        print(f"[Phase 9] Using fallback tofersen prediction: {tofersen_pred}%")
+    # Predict tofersen.
+    # ASO1-6 fix: the fabricated hardcoded 50.0 fallback was removed.
+    # On failure we raise instead of writing an invented benchmark value, and
+    # tofersen_reference.json is NOT written (save_tofersen_reference is only
+    # reached with a real prediction).
+    try:
+        tofersen_pred = predict_tofersen()
+    except Exception as e:
+        raise RuntimeError(
+            "tofersen prediction failed; refusing to write fallback benchmark"
+        ) from e
+    if tofersen_pred is None:
+        raise RuntimeError(
+            "tofersen prediction failed; refusing to write fallback benchmark"
+        )
+    print(f"[Phase 9] Tofersen predicted inhibition: {tofersen_pred:.2f}%")
 
     # Save outputs
     save_tofersen_reference(tofersen_pred)
